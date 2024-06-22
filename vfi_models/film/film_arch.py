@@ -459,14 +459,6 @@ class Interpolator(nn.Module):
         return self.debug_forward(x0, x1, batch_dt)['image'][0]
 
 
-
-
-
-
-
-
-
-
 """PyTorch layer for estimating optical flow by a residual flow pyramid.
 
 This approach of estimating optical flow between two images can be traced back
@@ -617,14 +609,6 @@ class PyramidFlowEstimator(nn.Module):
         return residuals
 
 
-
-
-
-
-
-
-
-
 """Various utilities used in the film_net frame interpolator model."""
 from typing import List, Optional
 
@@ -665,13 +649,16 @@ def build_image_pyramid(image: torch.Tensor, pyramid_levels: int = 3) -> List[to
     Returns:
       A list of images starting from the finest with options.pyramid_levels items
     """
-
+    # Ensure the image is dequantized before pooling
+    image = self.dequantize_activations(image)
+    
     pyramid = []
     for i in range(pyramid_levels):
         pyramid.append(image)
         if i < pyramid_levels - 1:
             image = F.avg_pool2d(image, 2, 2)
     return pyramid
+
 
 
 def warp(image: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
