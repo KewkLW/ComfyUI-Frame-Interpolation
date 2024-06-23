@@ -94,13 +94,14 @@ class FILM_VFI:
         output_frames = []
 
         if isinstance(multiplier, int):
-            multipliers = [multiplier] * len(frames)
+            multipliers = [multiplier] * (len(frames) - 1)
         else:
             multipliers = list(map(int, multiplier))
             multipliers += [2] * (len(frames) - len(multipliers) - 1)
 
         for frame_itr in range(len(frames) - 1):
             if interpolation_states is not None and interpolation_states.is_frame_skipped(frame_itr):
+                output_frames.append(frames[frame_itr])
                 continue
 
             frame_0 = frames[frame_itr:frame_itr+1].to(DEVICE).float()
@@ -110,17 +111,19 @@ class FILM_VFI:
             frame_0 = self.dequantize_activations(frame_0)
             frame_1 = self.dequantize_activations(frame_1)
 
-            # Create a 2D tensor for the time step
-            time_step = torch.tensor([[0.5]], device=DEVICE)
+            output_frames.append(frame_0.cpu())  # Add the first frame of each pair
 
-            if self.use_gradient_checkpointing:
-                result = checkpoint.checkpoint(self.model, frame_0, frame_1, time_step)
-            else:
-                result = self.model(frame_0, frame_1, time_step)
+            for t in torch.linspace(0, 1, multipliers[frame_itr] + 2)[1:-1]:
+                time_step = torch.tensor([[t]], device=DEVICE)
 
-            # Dequantize result if necessary
-            result = self.dequantize_activations(result)
-            output_frames.extend([frame.detach().cpu() for frame in result[:-1]])
+                if self.use_gradient_checkpointing:
+                    result = checkpoint.checkpoint(self.model, frame_0, frame_1, time_step)
+                else:
+                    result = self.model(frame_0, frame_1, time_step)
+
+                # Dequantize result if necessary
+                result = self.dequantize_activations(result)
+                output_frames.append(result.detach().cpu())
 
             number_of_frames_processed_since_last_cleared_cuda_cache += 1
             if number_of_frames_processed_since_last_cleared_cuda_cache >= clear_cache_after_n_frames:
@@ -129,7 +132,7 @@ class FILM_VFI:
                 number_of_frames_processed_since_last_cleared_cuda_cache = 0
                 print("Done cache clearing")
 
-        output_frames.append(frames[-1:])
+        output_frames.append(frames[-1:])  # Add the last frame
         out = torch.cat(output_frames, dim=0)
         print("Comfy-VFI: Final clearing cache...", end=' ')
         torch.cuda.empty_cache()
